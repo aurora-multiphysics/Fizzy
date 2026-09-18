@@ -27,3 +27,12 @@ protected:
   // const FispactFluxInput *;
   // const FispactNuclearDataPaths *;
 };
+
+
+class FispactMaterialConstructorTest : public FizzyObjectUnitTest {
+public:
+  FispactMaterialConstructorTest() : FizzyObjectUnitTest("FizzyApp")
+  {}
+};
+
+
