@@ -23,6 +23,8 @@ namespace bi = boost::interprocess;
 #endif
 
 class FispactProblem : public ExternalProblem {
+  // Allow the unit-test fixture to initialize and inspect strength storage.
+  friend class FispactProblemStrengthTest;
 
 public:
   FispactProblem(const InputParameters &params);
@@ -58,7 +60,10 @@ public:
   ///
   const FispactMaterial &getElementMaterial(const dof_id_type &elem_id);
 
-  void setPhotonBins(const std::vector<double> &photon_bins);
+  // void setPhotonBins(const std::vector<double> &photon_bins);
+  const std::vector<double> &getPhotonBins() const { return _photon_bins; }
+
+  const size_t numPhotonBins() { return _n_photon_bins; };
 
   /**
    * Converts FISPACT gamma spectra outputs from MeV s^-1 to cm^-3 s^-1
@@ -226,13 +231,6 @@ public:
   /**
    *
    */
-  std::vector<double> &getPhotonBins() {
-    if (_photon_bins.empty()) {
-      mooseError("_photon_bins not set, so could not be gotten");
-    }
-    return _photon_bins;
-  }
-
   size_t photonEnergySpectraIdx(size_t inv_idx, dof_id_type elem_id) {
     return ((inv_idx * (_mesh.nActiveLocalElem() * _n_photon_bins)) +
             (_local_elem_index[elem_id] * _n_photon_bins));

@@ -106,6 +106,8 @@ public:
 
   virtual void setAtomsThreshold(double threshold) {}
 
+  virtual void setGammaEnergyBounds(const std::vector<double>& bounds) {}
+
 private:
   double rtol, atol;
   std::pair<std::vector<double>, std::vector<double>> schedule;
