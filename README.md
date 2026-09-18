@@ -1,5 +1,7 @@
 # Fizzy
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22283128.svg)](https://doi.org/10.5281/zenodo.22283128)
+
 Fizzy is a MOOSE application wrapping the nuclear inventory, source term and multi-physics code, FISPACT-II.
 
 ## Dependencies
