@@ -7,6 +7,7 @@
 
 /// Cpp includes
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <iomanip>
@@ -98,10 +99,6 @@ InputParameters FispactProblem::validParams() {
       "photon_flux_filename", "photon_flux.h5",
       "Filename for the h5 file containing the output photon spectra");
 
-  // params.addParam<uint64_t>(
-  //     "num_photon_bins", 24,
-  //     "The number of bins to sort the output photon flux into");
-
   params.addParam<bool>(
       "comm_photon_flux", false,
       "Boolean value used to indicate whether to use boost::interprocess to "
@@ -124,7 +121,8 @@ InputParameters FispactProblem::validParams() {
 
   params.addParam<std::vector<double>>(
       "photon_bins", utils::energy_groups::gamma_groups[24],
-      "Boundaries to use for photon emission spectrum");
+      "Photon emission spectrum boundaries: at least two finite, strictly "
+      "positive values in strictly increasing order");
 
   params.addParam<bool>(
       "uniform_sampling", false,
@@ -139,7 +137,6 @@ FispactProblem::FispactProblem(const InputParameters &params)
       _photon_flux_filename(getParam<FileName>("photon_flux_filename")),
       _materials_from_xml(getParam<bool>("read_materials_from_xml")),
       _materials_xml_file(getParam<FileName>("materials_xml_file")),
-      // _n_photon_bins(getParam<uint64_t>("num_photon_bins")),
       _photon_bins(getParam<std::vector<double>>("photon_bins")),
       _fp_schedule_uo_name(getParam<UserObjectName>("fispact_schedule_uo")),
       _fp_flux_uo_name(getParam<UserObjectName>("fispact_input_flux_uo")),
@@ -153,6 +150,18 @@ FispactProblem::FispactProblem(const InputParameters &params)
       _molar_mass_data_filename(getParam<FileName>("molar_mass_data")),
       _atol(getParam<double>("atol")), _rtol(getParam<double>("rtol")),
       _exclude_xrays(getParam<bool>("exclude_xrays")) {
+
+  if (_photon_bins.size() < 2)
+    paramError("photon_bins", "At least two photon energy boundaries are required.");
+
+  for (size_t i = 0; i < _photon_bins.size(); ++i) {
+    if (!std::isfinite(_photon_bins[i]) || _photon_bins[i] <= 0.0)
+      paramError("photon_bins", "Boundary at index ", i,
+                 " must be finite and strictly positive.");
+    if (i > 0 && _photon_bins[i] <= _photon_bins[i - 1])
+      paramError("photon_bins", "Boundaries must be strictly increasing; boundary at index ",
+                 i, " must exceed the preceding boundary.");
+  }
 
   _n_photon_bins = _photon_bins.size() - 1;
   /**
