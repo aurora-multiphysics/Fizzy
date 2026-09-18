@@ -23,6 +23,8 @@ namespace bi = boost::interprocess;
 #endif
 
 class FispactProblem : public ExternalProblem {
+  // Allow the unit-test fixture to initialize and inspect strength storage.
+  friend class FispactProblemStrengthTest;
 
 public:
   FispactProblem(const InputParameters &params);
@@ -59,7 +61,7 @@ public:
   const FispactMaterial &getElementMaterial(const dof_id_type &elem_id);
 
   // void setPhotonBins(const std::vector<double> &photon_bins);
-  const std::vector<double> &getPhotonBins() { return _photon_bins; };
+  const std::vector<double> &getPhotonBins() const { return _photon_bins; }
 
   const size_t numPhotonBins() { return _n_photon_bins; };
 
