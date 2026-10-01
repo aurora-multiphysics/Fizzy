@@ -24,7 +24,7 @@ namespace bi = boost::interprocess;
 
 class FispactProblem : public ExternalProblem {
   // Allow the unit-test fixture to initialize and inspect strength storage.
-  friend class FispactProblemStrengthTest;
+  friend class FizzyObjectUnitTest;
 
 public:
   FispactProblem(const InputParameters &params);
@@ -250,6 +250,13 @@ public:
    */
   const std::string generateInterprocessName();
 
+  const std::pair<std::vector<int>, std::vector<double>>
+  calculateFuelInput(const FispactMaterial &material,
+                     const double &total_mass_grams) const;
+
+  const std::pair<std::vector<int>, std::vector<double>>
+  calculateMassInput(const FispactMaterial &material) const;
+
 protected:
   /// -- Interprocess bits --
 #ifdef LIBMESH_HAVE_BOOST
@@ -318,7 +325,7 @@ protected:
 
   FispactSchedule *_fp_schedule_uo = nullptr;
 
-  FispactNuclearDataPaths *_fp_nuclear_data_uo;
+  FispactNuclearDataPaths *_fp_nuclear_data_uo = nullptr;
 
   FispactFluxInput *_fp_flux_input_uo = nullptr;
 
