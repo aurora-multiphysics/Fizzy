@@ -72,6 +72,9 @@ ADDITIONAL_LIBS += $(FISPACT_STUB_LIB)
 
 all: $(FISPACT_STUB_LIB)
 
+# The unit build's Fizzy library also constructs GoogleMock-backed contexts.
+include $(CURRENT_DIR)/gmock.mk
+
 include            $(FRAMEWORK_DIR)/app.mk
 
 APPLICATION_DIR    := $(CURRENT_DIR)
