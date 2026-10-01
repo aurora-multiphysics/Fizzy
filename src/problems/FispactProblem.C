@@ -1,5 +1,6 @@
 #include "EnergyGroups.h"
 #include "FispactInventoryManager.h"
+#include "FispactMaterial.h"
 #include "FispactProblem.h"
 //// PugiXML include
 #include "FizzyEnums.h"
@@ -152,14 +153,16 @@ FispactProblem::FispactProblem(const InputParameters &params)
       _exclude_xrays(getParam<bool>("exclude_xrays")) {
 
   if (_photon_bins.size() < 2)
-    paramError("photon_bins", "At least two photon energy boundaries are required.");
+    paramError("photon_bins",
+               "At least two photon energy boundaries are required.");
 
   for (size_t i = 0; i < _photon_bins.size(); ++i) {
     if (!std::isfinite(_photon_bins[i]) || _photon_bins[i] <= 0.0)
       paramError("photon_bins", "Boundary at index ", i,
                  " must be finite and strictly positive.");
     if (i > 0 && _photon_bins[i] <= _photon_bins[i - 1])
-      paramError("photon_bins", "Boundaries must be strictly increasing; boundary at index ",
+      paramError("photon_bins",
+                 "Boundaries must be strictly increasing; boundary at index ",
                  i, " must exceed the preceding boundary.");
   }
 
@@ -497,10 +500,12 @@ void FispactProblem::convertFluxEnergyGroups(
   case 0: // LETHARGY
     flux = _fp_ctxt->getUtils().GroupConvertByLethargy(
         input_energy_groups, flux, _flux_energy_groups);
+    break;
 
   case 1: // ENERGY
     flux = _fp_ctxt->getUtils().GroupConvertByEnergy(input_energy_groups, flux,
                                                      _flux_energy_groups);
+    break;
   }
 }
 
@@ -533,48 +538,16 @@ void FispactProblem::setFispactInputData(const FispactMaterial &material,
 
   if (material.getMaterialType() == "MASS") {
 
-    std::vector<int> atomic_numbers;
-    std::vector<double> percent;
-
     /// Set total mass, in kg!
     input.setMassTotal(total_mass_grams * 1e-3);
 
-    const std::unordered_map<std::string, double> &nuclideFractionMap =
-        material.getNuclideFractionMap();
-
-    atomic_numbers.reserve(nuclideFractionMap.size());
-
-    for (auto &[element_name, mass_fraction] : nuclideFractionMap) {
-
-      atomic_numbers.push_back(
-          _fp_ctxt->getUtils().GetAtomicNumberFromElementName(element_name));
-    }
-
-    input.setMass(atomic_numbers, material.getNuclideFractions());
+    auto &[atomic_numbers, nuclide_fractions] = calculateMassInput(material);
+    input.setMass(atomic_numbers, nuclide_fractions);
 
   } else if (material.getMaterialType() == "FUEL") {
 
-    /// Get material map, that maps from map[nuclide_name] -> mass_fraction
-    const std::unordered_map<std::string, double> &nuclideFractionMap =
-        material.getNuclideFractionMap();
+    auto &[zais, atoms] = calculateFuelInput(material, total_mass_grams);
 
-    std::vector<int> zais;
-    zais.reserve(nuclideFractionMap.size());
-    std::vector<double> atoms;
-    atoms.reserve(nuclideFractionMap.size());
-
-    /// For all key (isotope name) value (mass_fraction) pairs in map,
-    /// calculate the number of atoms pertaining to each isotope and append to
-    /// input fuel
-    for (const auto &[isotope_name, mass_fraction] : nuclideFractionMap) {
-
-      double zai_mass = total_mass_grams * (mass_fraction);
-
-      zais.push_back(_fp_ctxt->getUtils().GetZai(isotope_name));
-
-      atoms.push_back(
-          getNumAtoms(zai_mass, _molar_mass_map.at(isotope_name), AVOGADRO));
-    }
     input.setFuel(zais, atoms);
   }
 
@@ -1007,3 +980,50 @@ void FispactProblem::writePhotonFluxBins(const hid_t &file_id,
 const double FispactProblem::avogadroNumber() const { return AVOGADRO; }
 
 void FispactProblem::callFispactFactory() { _fp_ctxt = createFispactContext(); }
+
+const std::pair<std::vector<int>, std::vector<double>>
+FispactProblem::calculateFuelInput(const FispactMaterial &material,
+                                   const double &total_mass_grams) const {
+  /// Get material map, that maps from map[nuclide_name] -> mass_fraction
+  const std::unordered_map<std::string, double> &nuclideFractionMap =
+      material.getNuclideFractionMap();
+
+  std::vector<int> zais;
+  zais.reserve(nuclideFractionMap.size());
+  std::vector<double> atoms;
+  atoms.reserve(nuclideFractionMap.size());
+
+  /// For all key (isotope name) value (mass_fraction) pairs in map,
+  /// calculate the number of atoms pertaining to each isotope and append to
+  /// input fuel
+  for (const auto &[isotope_name, mass_fraction] : nuclideFractionMap) {
+
+    double zai_mass = total_mass_grams * (mass_fraction);
+
+    zais.push_back(_fp_ctxt->getUtils().GetZai(isotope_name));
+
+    atoms.push_back(
+        getNumAtoms(zai_mass, _molar_mass_map.at(isotope_name), AVOGADRO));
+  }
+
+  return std::pair<std::vector<int>, std::vector<double>>(zais, atoms);
+}
+
+const std::pair<std::vector<int>, std::vector<double>>
+FispactProblem::calculateMassInput(const FispactMaterial &material) const {
+
+  const std::unordered_map<std::string, double> &nuclideFractionMap =
+      material.getNuclideFractionMap();
+
+  std::vector<int> atomic_numbers;
+  atomic_numbers.reserve(nuclideFractionMap.size());
+
+  for (auto &[element_name, mass_fraction] : nuclideFractionMap) {
+
+    atomic_numbers.push_back(
+        _fp_ctxt->getUtils().GetAtomicNumberFromElementName(element_name));
+  }
+
+  return std::pair<std::vector<int>, std::vector<double>>(
+      atomic_numbers, material.getNuclideFractions());
+}

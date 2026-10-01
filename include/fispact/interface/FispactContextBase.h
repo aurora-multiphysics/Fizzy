@@ -82,6 +82,8 @@ private:
 
 class IFispactInputDataBase {
 public:
+  virtual ~IFispactInputDataBase() = default;
+
   virtual void setFlux(const std::vector<double> &flux_energy_groups,
                        const std::vector<double> &flux) = 0;
 
@@ -115,6 +117,8 @@ public:
 
 class IFispactOutputDataBase {
 public:
+  virtual ~IFispactOutputDataBase() = default;
+
   virtual std::vector<double> getGammaSpectrumBins(int inv_index) = 0;
 
   virtual std::vector<double> getGammaSpectrumBoundaries(int inv_index) = 0;
@@ -137,6 +141,9 @@ public:
 
 class IFispactUtilsBase {
 public:
+
+  virtual ~IFispactUtilsBase() = default;
+
   virtual int GetZai(std::string nuclidename) = 0;
 
   virtual std::string getNuclideName(int zai) = 0;
@@ -160,6 +167,8 @@ public:
 
 class FispactContextBase {
 public:
+  virtual ~FispactContextBase() = default;
+
   virtual void globalInitialise() = 0;
   virtual void globalFinalise() = 0;
   virtual void process() = 0;
