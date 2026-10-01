@@ -27,11 +27,13 @@ void FispactInputDataSetFlux() {}
 void FispactInputDataSetFluxName() {}
 void FispactInputDataSetFluxWallLoading() {}
 void FispactInputDataSetFuel() {}
+void FispactInputDataSetGammaEnergyBounds() {}
 void FispactInputDataSetMass() {}
 void FispactInputDataSetMassTotal() {}
 void FispactInputDataSetSchedule() {}
 void FispactInputDataSetSolverTolerance() {}
 void FispactInputDataWrite() {}
+void FispactInputDataDestroy() {}
 void FispactNuclearDataCreate() {}
 void FispactNuclearDataDestroy() {}
 void FispactNuclearDataGetReactionXS() {}
@@ -46,6 +48,7 @@ void FispactNuclearDataReaderSetUseXSBinary() {}
 void FispactNuclearDataReaderWrite() {}
 void FispactNuclearDataWriteBinary() {}
 void FispactOutputDataCreate() {}
+void FispactOutputDataDestroy() {}
 void FispactOutputDataFindInventoryNuclideExists() {}
 void FispactOutputDataFindInventoryNuclideIndex() {}
 void FispactOutputDataGetInventoryDoseRate() {}

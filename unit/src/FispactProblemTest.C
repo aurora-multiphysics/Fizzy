@@ -1,13 +1,6 @@
-#include "AverageElementSize.h"
-#include "FizzyObjectUnitTest.h"
-#include "gtest/gtest.h"
+#include "FispactProblemTest.h"
 #include <limits>
 #include <stdexcept>
-
-class FispactProblemTest : public FizzyObjectUnitTest {
-public:
-  FispactProblemTest() : FizzyObjectUnitTest("FizzyApp") {}
-};
 
 class FispactProblemPhotonBinsTest : public FizzyObjectUnitTest {
 public:
@@ -102,14 +95,6 @@ public:
   FispactProblemStrengthTest() : FizzyObjectUnitTest("FizzyApp") {}
 
 protected:
-  void initializeStrengths() {
-    // Normally allocated in initialSetup(), which also requires solve inputs.
-    _fe_problem->_element_strengths.assign(_mesh->nActiveLocalElem(), -1.0);
-  }
-
-  const std::vector<double> &strengths() const {
-    return _fe_problem->_element_strengths;
-  }
 };
 
 TEST_F(FispactProblemStrengthTest, insertElementStrengthSumAndStore) {
@@ -160,38 +145,98 @@ TEST_F(FispactProblemTest, loadMolarMasses) {
   EXPECT_EQ(molar_masses.at("H1"), 1);
   EXPECT_EQ(molar_masses.at("H2"), 2);
   EXPECT_EQ(molar_masses.at("He3"), 3);
-
   EXPECT_EQ(molar_masses.count("H33"), 0u);
 }
 
-// class FispactProblemTestUserObjects : public FizzyObjectUnitTest {
-// public:
-//   FispactProblemTestUserObjects() : FizzyObjectUnitTest("FizzyApp") {
-//     buildObjects();
-//   }
-//
-// protected:
-//   void buildObjects() {
-//
-//     InputParameters pars_mat1 = _factory.getValidParams("FispactMaterial");
-//
-//     pars_mat1.set<MooseEnum>("material_type") = "FUEL";
-//     pars_mat1.set<std::vector<std::string>>("nuclides") = {"H1"};
-//     pars_mat1.set<std::vector<double>>("nuclide_fraction") = {100};
-//     pars_mat1.set<double>("density") = 1;
-//     pars_mat1.set<MooseEnum>("density_units") = "g/cm3";
-//     pars_mat1.set<MooseEnum>("fraction_type") = "wo";
-//     pars_mat1.set<std::vector<SubdomainName>>("block") = {"1"};
-//     _fe_problem->addObject<FispactMaterial>("FispactMaterial", "Hydrogen",
-//                                             pars_mat1);
-//     _mat1 = &_fe_problem->getUserObject<FispactMaterial>("Hydrogen");
-//   }
-//
-//   const FispactMaterial *_mat1;
-//   const FispactSchedule *_schedule;
-//   // const FispactFluxInput *;
-//   // const FispactNuclearDataPaths *;
-// };
+TEST_F(FispactProblemTestUserObjects, resolveFispactUserObjects) {
+
+  auto problemParams = problemParameters();
+  buildProblem(problemParams);
+
+  buildObjectsFuel();
+  _fe_problem->resolveFispactUserObjects();
+  EXPECT_EQ(fpScheduleUO(), _schedule);
+  EXPECT_EQ(fpNuclearDataUO(), _nuclear_data_paths);
+  EXPECT_EQ(fpFluxUO(), _flux_input);
+
+  const auto materials = fpMaterialUOs();
+  ASSERT_EQ(materials.size(), 1u);
+  EXPECT_EQ(materials.front(), _mat);
+}
+
+TEST_F(FispactProblemTestUserObjects, rejectsMissingNuclearData) {
+
+  auto problemParams = problemParameters();
+  buildProblem(problemParams);
+
+  buildMaterialFuel();
+  buildSchedule();
+  buildFluxInput();
+
+  try {
+    _fe_problem->resolveFispactUserObjects();
+    FAIL() << "Expected missing nuclear data to be rejected";
+  } catch (const std::runtime_error &error) {
+    const std::string message = error.what();
+    EXPECT_NE(message.find("Unable to find user object with name 'test_nd'"),
+              std::string::npos);
+  }
+}
+
+TEST_F(FispactProblemTestUserObjects, rejectsMissingSchedule) {
+
+  auto problemParams = problemParameters();
+  buildProblem(problemParams);
+
+  buildMaterialFuel();
+  buildNuclearDataPaths();
+  buildFluxInput();
+
+  try {
+    _fe_problem->resolveFispactUserObjects();
+    FAIL() << "Expected the missing schedule to be rejected";
+  } catch (const std::runtime_error &error) {
+    const std::string message = error.what();
+    EXPECT_NE(
+        message.find("Unable to find user object with name 'test_schedule'"),
+        std::string::npos);
+  }
+}
+
+TEST_F(FispactProblemTestUserObjects, rejectsMissingFluxInput) {
+  auto problemParams = problemParameters();
+  buildProblem(problemParams);
+
+  buildMaterialFuel();
+  buildNuclearDataPaths();
+  buildSchedule();
+
+  try {
+    _fe_problem->resolveFispactUserObjects();
+    FAIL() << "Expected missing flux input to be rejected";
+  } catch (const std::runtime_error &error) {
+    const std::string message = error.what();
+    EXPECT_NE(message.find("Unable to find user object with name 'test_flux'"),
+              std::string::npos);
+  }
+}
+
+TEST_F(FispactProblemTestUserObjects, resolvesWithoutMaterials) {
+
+  auto problemParams = problemParameters();
+  buildProblem(problemParams);
+
+  buildNuclearDataPaths();
+  buildSchedule();
+  buildFluxInput();
+
+  ASSERT_NO_THROW(_fe_problem->resolveFispactUserObjects());
+
+  EXPECT_EQ(fpScheduleUO(), _schedule);
+  EXPECT_EQ(fpNuclearDataUO(), _nuclear_data_paths);
+  EXPECT_EQ(fpFluxUO(), _flux_input);
+  EXPECT_TRUE(fpMaterialUOs().empty());
+}
 
 /// Test fixture to make sure getElementMaterial throws if two materials are
 /// defined on the same block
@@ -273,7 +318,6 @@ TEST_P(FispactScheduleInvalidParamsTest, rejectsInvalidParams) {
     FAIL() << "Expected invalid schedule params to be rejected";
   } catch (const std::runtime_error &error) {
     const std::string message = error.what();
-    std::cout << message << std::endl;
     EXPECT_NE(message.find(test.message), std::string::npos);
   }
 }
@@ -317,3 +361,10 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<InvalidScheduleParams> &info) {
       return info.param.name;
     });
+
+TEST_F(FispactProblemTest, GetZai) {
+  EXPECT_CALL(mockUtils(), GetZai("H1"))
+      .Times(1)
+      .WillOnce(::testing::Return(67));
+  EXPECT_EQ(mockUtils().GetZai("H1"), 67);
+}

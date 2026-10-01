@@ -8,7 +8,7 @@
 //* https://www.gnu.org/licenses/lgpl-2.1.html
 
 #include "FizzyApp.h"
-#include "gtest/gtest.h"
+#include "gmock/gmock.h"
 
 // Moose includes
 #include "Moose.h"
@@ -21,8 +21,8 @@
 GTEST_API_ int
 main(int argc, char ** argv)
 {
-  // gtest removes (only) its args from argc and argv - so this  must be before moose init
-  testing::InitGoogleTest(&argc, argv);
+  // Remove GoogleTest and GoogleMock arguments before MOOSE processes them.
+  testing::InitGoogleMock(&argc, argv);
 
   MooseInit init(argc, argv);
   registerApp(FizzyApp);

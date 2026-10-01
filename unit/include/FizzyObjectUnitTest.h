@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include <memory>
 
@@ -16,6 +17,8 @@
 #include "FEProblem.h"
 #include "FileMesh.h"
 #include "FileMeshGenerator.h"
+#include "FispactContextMock.h"
+#include "FispactNuclearDataPaths.h"
 #include "FispactProblem.h"
 #include "MooseMain.h"
 #include "MooseMesh.h"
@@ -45,7 +48,8 @@ protected:
     InputParameters mesh_params = _factory.getValidParams("FileMesh");
     mesh_params.set<MeshFileName>("file") = "../geometry/cube.e";
 
-    _mesh = _factory.createUnique<FileMesh>("FileMesh", "name1", mesh_params);
+    _mesh =
+        _factory.createUnique<FileMesh>("FileMesh", "name_mesh", mesh_params);
     _mesh->setMeshBase(_mesh->buildMeshBaseObject());
     _mesh->buildMesh();
     _mesh->init();
@@ -55,10 +59,10 @@ protected:
   InputParameters problemParameters() {
     InputParameters problem_params = _factory.getValidParams("FispactProblem");
     problem_params.set<MooseMesh *>("mesh") = _mesh.get();
-    problem_params.set<std::string>(MooseBase::name_param) = "name2";
-    problem_params.set<UserObjectName>("fispact_schedule_uo") = "name2";
-    problem_params.set<UserObjectName>("fispact_nuclear_data_uo") = "name2";
-    problem_params.set<UserObjectName>("fispact_input_flux_uo") = "name2";
+    problem_params.set<std::string>(MooseBase::name_param) = "problem";
+    problem_params.set<UserObjectName>("fispact_schedule_uo") = "test_schedule";
+    problem_params.set<UserObjectName>("fispact_nuclear_data_uo") = "test_nd";
+    problem_params.set<UserObjectName>("fispact_input_flux_uo") = "test_flux";
     problem_params.set<FileName>("molar_mass_data") = "molar_mass_mock.h5";
     return problem_params;
   }
@@ -73,6 +77,44 @@ protected:
     _fe_problem->callFispactFactory();
 
     _app->actionWarehouse().problemBase() = _fe_problem;
+  }
+
+  void initializeStrengths() {
+    // Normally allocated in initialSetup(), which also requires solve inputs.
+    _fe_problem->_element_strengths.assign(_mesh->nActiveLocalElem(), -1.0);
+  }
+
+  IMockFispactUtils &mockUtils() {
+    return dynamic_cast<IMockFispactUtils &>(_fe_problem->_fp_ctxt->getUtils());
+  }
+
+  IMockFispactInputData &mockInput() {
+    return dynamic_cast<IMockFispactInputData &>(
+        _fe_problem->_fp_ctxt->getInput());
+  }
+
+  const std::vector<double> &strengths() const {
+    return _fe_problem->_element_strengths;
+  }
+
+  const FispactNuclearDataPaths *fpNuclearDataUO() const {
+    return _fe_problem->_fp_nuclear_data_uo;
+  }
+
+  const FispactFluxInput *fpFluxUO() const {
+    return _fe_problem->_fp_flux_input_uo;
+  }
+
+  const FispactSchedule *fpScheduleUO() const {
+    return _fe_problem->_fp_schedule_uo;
+  }
+
+  const std::vector<FispactMaterial *> fpMaterialUOs() const {
+    return _fe_problem->_fp_fispact_materials;
+  }
+
+  void setTargetEnergyGroups(const std::vector<double> &bounds) {
+    _fe_problem->_flux_energy_groups = bounds;
   }
 
   template <typename T>
