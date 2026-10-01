@@ -82,6 +82,8 @@ private:
 
 class IFispactInputDataBase {
 public:
+  virtual ~IFispactInputDataBase() = default;
+
   virtual void setFlux(const std::vector<double> &flux_energy_groups,
                        const std::vector<double> &flux) = 0;
 
@@ -94,6 +96,8 @@ public:
   virtual void setDensity(double density) = 0;
 
   virtual void setMassTotal(double total_mass) = 0;
+
+  virtual void setGammaEnergyBounds(const std::vector<double> &bounds) = 0;
 
   virtual void setMass(const std::vector<int> &atomicnumbers,
                        const std::vector<double> &percentages) = 0;
@@ -113,6 +117,8 @@ public:
 
 class IFispactOutputDataBase {
 public:
+  virtual ~IFispactOutputDataBase() = default;
+
   virtual std::vector<double> getGammaSpectrumBins(int inv_index) = 0;
 
   virtual std::vector<double> getGammaSpectrumBoundaries(int inv_index) = 0;
@@ -135,15 +141,18 @@ public:
 
 class IFispactUtilsBase {
 public:
+
+  virtual ~IFispactUtilsBase() = default;
+
   virtual int GetZai(std::string nuclidename) = 0;
 
   virtual std::string getNuclideName(int zai) = 0;
 
   virtual int GetAtomicNumberFromElementName(std::string elementname) = 0;
 
-  virtual std::vector<double> getNeutronEnergyBounds(size_t n_groups) = 0;
-
-  virtual std::vector<double> getPhotonEnergyBounds(size_t n_groups) = 0;
+  // virtual std::vector<double> getNeutronEnergyBounds(size_t n_groups) = 0;
+  //
+  // virtual std::vector<double> getPhotonEnergyBounds(size_t n_groups) = 0;
 
   virtual std::vector<double>
   GroupConvertByEnergy(const std::vector<double> &inbounds,
@@ -158,6 +167,8 @@ public:
 
 class FispactContextBase {
 public:
+  virtual ~FispactContextBase() = default;
+
   virtual void globalInitialise() = 0;
   virtual void globalFinalise() = 0;
   virtual void process() = 0;

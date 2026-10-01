@@ -24,9 +24,27 @@ FispactSchedule::FispactSchedule(const InputParameters &parameters)
       _times(getParam<std::vector<double>>("times")),
       _n_solution_inventories(_times.size()),
       _n_inventories(_n_solution_inventories + 1) {
-  // Check vectors passed in are the right size
+  // Check times and flux_amplitude vectors are of equal size
   if (_times.size() != _flux_amplitude.size()) {
-    mooseError("The length of the flux_schdule and times must be equal");
+    paramError("times",
+               "The length of the flux_schdule and times must be equal.");
+  }
+
+  if (_times.empty() || _flux_amplitude.empty()) {
+    paramError("times", "times and flux_amplitude cannot be empty vectors.");
+  }
+
+  // Check times and flux_amplitude vectors are both positive
+  for (size_t i = 0; i < _times.size(); i++) {
+    if (!std::isfinite(_times[i]) || _times[i] <= 0.0) {
+      paramError("times", "times value at index ", i,
+                 " must be finite and strictly positive.");
+    }
+
+    if (!std::isfinite(_flux_amplitude[i]) || _flux_amplitude[i] <= 0.0) {
+      paramError("flux_amplitude", "flux_amplitude value at index ", i,
+                 " must be finite and strictly positive.");
+    }
   }
 
   _cumulative_times.resize(_times.size());

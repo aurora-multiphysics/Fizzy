@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include <memory>
 
@@ -16,93 +17,57 @@
 #include "FEProblem.h"
 #include "FileMesh.h"
 #include "FileMeshGenerator.h"
+#include "FispactContextMock.h"
+#include "FispactNuclearDataPaths.h"
 #include "FispactProblem.h"
 #include "MooseMain.h"
 #include "MooseMesh.h"
 
-/**
- * Base class for building basic unit tests for MOOSE objects that can live
- * alone (like user objects, etc.)
- *
- * This class builds the basic objects that are needed in order to test a MOOSE
- * object. Those are a mesh and an FEProblem.  To build a unit test, inherit
- * from this class and build your test using the following template:
- *
- * In your .h file:
- *
- * class MyUnitTest : public MooseObjectUnitTest
- * {
- * public:
- *   MyUnitTest() : MooseObjectUnitTest("MyAppUnitApp")
- *   {
- *     // if you are using the old registration system, you want to register
- * your objects using this
- *     // call. Otherwise, you do not need it.
- *     registerObjects(_factory);
- *     buildObjects();
- *   }
- *
- * protected:
- *   void registerObjects(Factory & factory)
- *   {
- *     // register your objects as usual, we have to be in a method like this so
- * that the register
- *     // macros work
- *     registerUserObject(MyObjectThatIAmTesting);
- *   }
- *
- *   void buildObjects()
- *   {
- *     // build your object like so
- *     InputParameters pars = _factory.getValidParams("MyObjectThatIAmTesting");
- *     _fe_problem->addUserObject("MyObjectThatIAmTesting", "fp", uo_pars);
- *     _obj = &_fe_problem->getUserObject<MyObjectThatIAmTesting>("fp");
- *   }
- *
- *   // member variable used later in the actual tests
- *   const MyObjectThatIAmTesting * _obj;
- * };
- *
- * In your .C file
- *
- * TEST_F(MyObjectThatIAmTesting, test)
- * {
- *   EXPECT_EQ("testing", _obj->method(par1, par2));
- * }
- *
- * NOTE: Testing mesh-bound objects like Kernels, BCs, etc. is not possible with
- * this class.
- */
 class FizzyObjectUnitTest : public ::testing::Test {
 public:
+  enum class ProblemSetup { Automatic, Deferred };
+
   /**
    * @param app_name The name of client's application
+   * @param setup Whether to construct the problem now or in the test body
    */
-  FizzyObjectUnitTest(const std::string &app_name)
+  FizzyObjectUnitTest(const std::string &app_name,
+                      ProblemSetup setup = ProblemSetup::Automatic)
       : _app(Moose::createMooseApp(app_name, 0, nullptr)),
         _factory(_app->getFactory()) {
-    buildObjects();
+    buildMesh();
+    if (setup == ProblemSetup::Automatic) {
+      auto params = problemParameters();
+      buildProblem(params);
+    }
   }
 
 protected:
-  void buildObjects() {
+  void buildMesh() {
 
     InputParameters mesh_params = _factory.getValidParams("FileMesh");
     mesh_params.set<MeshFileName>("file") = "../geometry/cube.e";
 
-    _mesh = _factory.createUnique<FileMesh>("FileMesh", "name1", mesh_params);
+    _mesh =
+        _factory.createUnique<FileMesh>("FileMesh", "name_mesh", mesh_params);
     _mesh->setMeshBase(_mesh->buildMeshBaseObject());
     _mesh->buildMesh();
     _mesh->init();
     _mesh->prepare(&_mesh->getMesh());
+  }
 
+  InputParameters problemParameters() {
     InputParameters problem_params = _factory.getValidParams("FispactProblem");
     problem_params.set<MooseMesh *>("mesh") = _mesh.get();
-    problem_params.set<std::string>(MooseBase::name_param) = "name2";
-    problem_params.set<UserObjectName>("fispact_schedule_uo") = "name2";
-    problem_params.set<UserObjectName>("fispact_nuclear_data_uo") = "name2";
-    problem_params.set<UserObjectName>("fispact_input_flux_uo") = "name2";
+    problem_params.set<std::string>(MooseBase::name_param) = "problem";
+    problem_params.set<UserObjectName>("fispact_schedule_uo") = "test_schedule";
+    problem_params.set<UserObjectName>("fispact_nuclear_data_uo") = "test_nd";
+    problem_params.set<UserObjectName>("fispact_input_flux_uo") = "test_flux";
     problem_params.set<FileName>("molar_mass_data") = "molar_mass_mock.h5";
+    return problem_params;
+  }
+
+  void buildProblem(InputParameters &problem_params) {
     _fe_problem = _factory.create<FispactProblem>("FispactProblem", "problem",
                                                   problem_params);
 
@@ -112,6 +77,44 @@ protected:
     _fe_problem->callFispactFactory();
 
     _app->actionWarehouse().problemBase() = _fe_problem;
+  }
+
+  void initializeStrengths() {
+    // Normally allocated in initialSetup(), which also requires solve inputs.
+    _fe_problem->_element_strengths.assign(_mesh->nActiveLocalElem(), -1.0);
+  }
+
+  IMockFispactUtils &mockUtils() {
+    return dynamic_cast<IMockFispactUtils &>(_fe_problem->_fp_ctxt->getUtils());
+  }
+
+  IMockFispactInputData &mockInput() {
+    return dynamic_cast<IMockFispactInputData &>(
+        _fe_problem->_fp_ctxt->getInput());
+  }
+
+  const std::vector<double> &strengths() const {
+    return _fe_problem->_element_strengths;
+  }
+
+  const FispactNuclearDataPaths *fpNuclearDataUO() const {
+    return _fe_problem->_fp_nuclear_data_uo;
+  }
+
+  const FispactFluxInput *fpFluxUO() const {
+    return _fe_problem->_fp_flux_input_uo;
+  }
+
+  const FispactSchedule *fpScheduleUO() const {
+    return _fe_problem->_fp_schedule_uo;
+  }
+
+  const std::vector<FispactMaterial *> fpMaterialUOs() const {
+    return _fe_problem->_fp_fispact_materials;
+  }
+
+  void setTargetEnergyGroups(const std::vector<double> &bounds) {
+    _fe_problem->_flux_energy_groups = bounds;
   }
 
   template <typename T>

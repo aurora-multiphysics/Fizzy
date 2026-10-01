@@ -23,6 +23,8 @@ namespace bi = boost::interprocess;
 #endif
 
 class FispactProblem : public ExternalProblem {
+  // Allow the unit-test fixture to initialize and inspect strength storage.
+  friend class FizzyObjectUnitTest;
 
 public:
   FispactProblem(const InputParameters &params);
@@ -58,7 +60,10 @@ public:
   ///
   const FispactMaterial &getElementMaterial(const dof_id_type &elem_id);
 
-  void setPhotonBins(const std::vector<double> &photon_bins);
+  // void setPhotonBins(const std::vector<double> &photon_bins);
+  const std::vector<double> &getPhotonBins() const { return _photon_bins; }
+
+  const size_t numPhotonBins() { return _n_photon_bins; };
 
   /**
    * Converts FISPACT gamma spectra outputs from MeV s^-1 to cm^-3 s^-1
@@ -226,13 +231,6 @@ public:
   /**
    *
    */
-  std::vector<double> &getPhotonBins() {
-    if (_photon_bins.empty()) {
-      mooseError("_photon_bins not set, so could not be gotten");
-    }
-    return _photon_bins;
-  }
-
   size_t photonEnergySpectraIdx(size_t inv_idx, dof_id_type elem_id) {
     return ((inv_idx * (_mesh.nActiveLocalElem() * _n_photon_bins)) +
             (_local_elem_index[elem_id] * _n_photon_bins));
@@ -251,6 +249,13 @@ public:
    * @param[out] ipc_name Reference to the string we want to populate
    */
   const std::string generateInterprocessName();
+
+  const std::pair<std::vector<int>, std::vector<double>>
+  calculateFuelInput(const FispactMaterial &material,
+                     const double &total_mass_grams) const;
+
+  const std::pair<std::vector<int>, std::vector<double>>
+  calculateMassInput(const FispactMaterial &material) const;
 
 protected:
   /// -- Interprocess bits --
@@ -320,7 +325,7 @@ protected:
 
   FispactSchedule *_fp_schedule_uo = nullptr;
 
-  FispactNuclearDataPaths *_fp_nuclear_data_uo;
+  FispactNuclearDataPaths *_fp_nuclear_data_uo = nullptr;
 
   FispactFluxInput *_fp_flux_input_uo = nullptr;
 

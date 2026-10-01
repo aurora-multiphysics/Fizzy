@@ -63,7 +63,7 @@ FispactMaterial::FispactMaterial(const InputParameters &parameters)
 
   // Check that nuclide fractions sum to equal to or less than 1
   if (!(std::accumulate(nuclide_fractions.begin(), nuclide_fractions.end(),
-                        0) <= 1)) {
+                        0.0) <= 1)) {
     mooseError("FispactMaterial " + name() +
                " has nuclide fractions summing to more than 1.");
   }

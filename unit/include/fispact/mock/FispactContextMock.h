@@ -1,6 +1,6 @@
-
 #pragma once
 #include "FispactContextBase.h"
+#include "gmock/gmock.h"
 
 #include <fstream>
 #include <memory>
@@ -73,42 +73,49 @@ class IMockFispactInputData : public IFispactInputDataBase {
 public:
   IMockFispactInputData() : IFispactInputDataBase() {}
 
-  virtual void setFlux(const std::vector<double> &flux_energy_groups,
-                       const std::vector<double> &flux) {}
+  // virtual void setFlux(const std::vector<double> &flux_energy_groups,
+  //                      const std::vector<double> &flux) {}
 
-  virtual void setFluxWallLoading(double wall_loading) {}
+  MOCK_METHOD(void, setFlux,
+              (const std::vector<double> &flux_energy_groups,
+               const std::vector<double> &flux),
+              (override));
 
-  virtual void setExcludeXrays(bool enable) {}
+  MOCK_METHOD(void, setFluxWallLoading, (double wall_loading), (override));
 
-  virtual void setFluxName(std::string flux_name) {}
+  MOCK_METHOD(void, setExcludeXrays, (bool enable), (override));
 
-  virtual void setDensity(double density) {}
+  MOCK_METHOD(void, setFluxName, (std::string flux_name), (override));
 
-  virtual void setMassTotal(double total_mass) {}
+  MOCK_METHOD(void, setDensity, (double density), (override));
 
-  virtual void setMass(const std::vector<int> &atomicnumbers,
-                       const std::vector<double> &percentages) {}
+  MOCK_METHOD(void, setMassTotal, (double total_mass), (override));
 
-  virtual void setFuel(const std::vector<int> &zais,
-                       const std::vector<double> &values) {}
+  MOCK_METHOD(void, setMass,
+              (const std::vector<int> &atomicnumbers,
+               const std::vector<double> &percentages),
+              (override));
 
-  virtual void setSchedule(const std::vector<double> &deltatime,
-                           const std::vector<double> &fluxamp) {}
+  MOCK_METHOD(void, setFuel,
+              (const std::vector<int> &zais, const std::vector<double> &values),
+              (override));
 
-  virtual std::pair<std::vector<double>, std::vector<double>> getSchedule() {
-    return schedule;
-  }
+  MOCK_METHOD(void, setSchedule,
+              (const std::vector<double> &deltatime,
+               const std::vector<double> &fluxamp),
+              (override));
 
-  virtual void setSolverTolerance(double rtol, double atol) {
-    this->rtol = rtol;
-    this->atol = atol;
-  }
+  MOCK_METHOD((std::pair<std::vector<double>, std::vector<double>>),
+              getSchedule, (), (override));
 
-  virtual void setAtomsThreshold(double threshold) {}
+  MOCK_METHOD(void, setSolverTolerance, (double rtol, double atol), (override));
+
+  MOCK_METHOD(void, setAtomsThreshold, (double threshold), (override));
+
+  MOCK_METHOD(void, setGammaEnergyBounds, (const std::vector<double> &bounds),
+              (override));
 
 private:
-  double rtol, atol;
-  std::pair<std::vector<double>, std::vector<double>> schedule;
 };
 //~IFispactInputData
 
@@ -166,44 +173,54 @@ class IMockFispactUtils : public IFispactUtilsBase {
 public:
   IMockFispactUtils() : IFispactUtilsBase() {}
 
-  virtual int GetZai(std::string nuclidename) {
-    if (nuclidename == "H1") {
-      return 4;
-    }
+  // virtual int GetZai(std::string nuclidename) {
+  //   if (nuclidename == "H1") {
+  //     return 4;
+  //   }
+  //
+  //   else if (nuclidename == "H2") {
+  //     return 5;
+  //   }
+  //
+  //   else if (nuclidename == "He3") {
+  //     return 6;
+  //   }
+  //   return -1;
+  // }
+  //
+  //
+  MOCK_METHOD(int, GetZai, (std::string nuclidename), (override));
 
-    else if (nuclidename == "H2") {
-      return 5;
-    }
+  MOCK_METHOD(int, GetAtomicNumberFromElementName, (std::string elementname),
+              (override));
 
-    else if (nuclidename == "He3") {
-      return 6;
-    }
-    return -1;
-  }
+  MOCK_METHOD(std::vector<double>, GroupConvertByEnergy,
+              (const std::vector<double> &inbounds,
+               const std::vector<double> &invals,
+               const std::vector<double> &outbounds),
+              (override));
 
-  virtual int GetAtomicNumberFromElementName(std::string elementname) const {
-    return 1;
-  }
+  MOCK_METHOD(std::vector<double>, GroupConvertByLethargy,
+              (const std::vector<double> &inbounds,
+               const std::vector<double> &invals,
+               const std::vector<double> &outbounds),
+              (override));
 
-  virtual std::vector<double>
-  GroupConvertByEnergy(const std::vector<double> &inbounds,
-                       const std::vector<double> &invals,
-                       const std::vector<double> &outbounds) {
-    return invals;
-  }
+  // virtual std::vector<double>
+  // GroupConvertByEnergy(const std::vector<double> &inbounds,
+  //                      const std::vector<double> &invals,
+  //                      const std::vector<double> &outbounds) {
+  //   return invals;
+  // }
 
-  virtual std::vector<double>
-  GroupConvertByLethargy(const std::vector<double> &inbounds,
-                         const std::vector<double> &invals,
-                         const std::vector<double> &outbounds) {
-    return invals;
-  }
+  // virtual std::vector<double>
+  // GroupConvertByLethargy(const std::vector<double> &inbounds,
+  //                        const std::vector<double> &invals,
+  //                        const std::vector<double> &outbounds) {
+  //   return invals;
+  // }
 
   virtual std::string getNuclideName(int zai) { return "zai"; };
-
-  virtual int GetAtomicNumberFromElementName(std::string elementname) {
-    return 1;
-  }
 
   virtual std::vector<double> getNeutronEnergyBounds(size_t n_groups) {
     return {1, 2, 3};
