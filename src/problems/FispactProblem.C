@@ -466,8 +466,8 @@ void FispactProblem::syncSolutions(ExternalProblem::Direction direction) {
       _photon_sharing_instance->setSamplingMethod(_uniform);
 
 #else
-      mooseError("_comm_photon_flux is set to true but libmesh was not
-                 built with BOOST. No communication occuring.");
+      mooseError("_comm_photon_flux is set to true but libmesh was not"
+                 "built with BOOST. No communication occuring.");
 #endif
     }
   }
