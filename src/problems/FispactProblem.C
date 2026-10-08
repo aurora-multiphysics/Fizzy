@@ -73,9 +73,8 @@ InputParameters FispactProblem::validParams() {
       "Name of the FispactFluxInput user object defining "
       "the input flux spectra");
 
-  params.addParam<bool>("mock_fispact", false,
-                        "Parameter exclusively for unit testing when we don't "
-                        "wish to use the actual FISPACT library");
+  params.addParam<bool>("dummy_fispact", false,
+                        "Parameter  testing when we don't ");
   params.addParam<bool>(
       "read_materials_from_xml", false,
       "Parameter determining whether user wishes to read materaial nuclide "
@@ -992,4 +991,6 @@ void FispactProblem::writePhotonFluxBins(const hid_t &file_id,
 
 const double FispactProblem::avogadroNumber() const { return AVOGADRO; }
 
-void FispactProblem::callFispactFactory() { _fp_ctxt = createFispactContext(); }
+void FispactProblem::callFispactFactory() {
+  _fp_ctxt = createFispactContext(getParam<bool>("dummy_fispact"));
+}
