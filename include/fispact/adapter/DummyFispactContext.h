@@ -269,16 +269,14 @@ public:
   GroupConvertByEnergy(const std::vector<double> &inbounds,
                        const std::vector<double> &invals,
                        const std::vector<double> &outbounds) {
-    return fispact::groupconvert::GroupConvertByEnergy(_monitor, inbounds,
-                                                       invals, outbounds);
+    return invals;
   }
 
   virtual std::vector<double>
   GroupConvertByLethargy(const std::vector<double> &inbounds,
                          const std::vector<double> &invals,
                          const std::vector<double> &outbounds) {
-    return fispact::groupconvert::GroupConvertByLethargy(_monitor, inbounds,
-                                                         invals, outbounds);
+    return invals;
   }
 
 private:
