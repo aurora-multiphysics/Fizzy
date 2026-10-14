@@ -51,7 +51,7 @@ public:
    * @return the total strength of the photon source term for this element
    *
    */
-  double calculateElementStrength(const std::vector<double> element_flux);
+  double calculateElementStrength(const std::vector<double> &element_flux);
   /**
    *
    */
@@ -183,7 +183,7 @@ public:
    *
    */
   void insertElementStrength(const int inv_index, const libMesh::Elem *element,
-                             const std::vector<double> element_flux);
+                             const std::vector<double> &element_flux);
 
   /**
    *
