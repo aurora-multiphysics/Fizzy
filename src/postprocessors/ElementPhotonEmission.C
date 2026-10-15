@@ -39,9 +39,9 @@ void ElementPhotonEmission::execute() {
     if (getFispactProblem().mesh().elemPtr(elem_id)->processor_id() ==
         processor_id()) {
 
-      std::vector<double>::iterator begin = spectra->spectrum_begin(
+      auto begin = spectra->spectrum_begin(
           inventory_index, local_element_index[elem_id]);
-      std::vector<double>::iterator end =
+      auto end =
           spectra->spectrum_end(inventory_index, local_element_index[elem_id]);
 
       _sum += std::accumulate(begin, end, 0.0);

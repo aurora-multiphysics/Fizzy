@@ -7,11 +7,13 @@
 
 /// Cpp includes
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <ostream>
@@ -160,32 +162,16 @@ FispactProblem::FispactProblem(const InputParameters &params)
   }
 
   /// Set up local element index map
-  int local_elem_idx = 0;
+  uint64_t local_elem_idx = 0;
   for (const libMesh::Elem *element : *_mesh.getActiveLocalElementRange()) {
-    _local_elem_index.insert(
-        std::pair<int, int>(element->id(), local_elem_idx++));
+    _local_elem_index.emplace(element->id(), local_elem_idx++);
   }
-
-  if (_comm_photon_flux) {
-
-#ifdef LIBMESH_HAVE_BOOST
-
-    /// Remove any potentially left over shared memory segments
-    bi::shared_memory_object::remove(_interprocess_segment_name.c_str());
-    comm().barrier();
-
-    /// Calculate space needed for shared mem region
-    unsigned long shared_memory_size = calculateMemorySize();
-
-    /// Create shared memory region
-    _segment = bi::managed_shared_memory(bi::create_only,
-                                         _interprocess_segment_name.c_str(),
-                                         shared_memory_size);
-#else
+  _n_local_elems = _local_elem_index.size();
+#ifndef LIBMESH_HAVE_BOOST
+  if (_comm_photon_flux)
     mooseError("_comm_photon_flux is set to true but libmesh was not built "
                "with BOOST. No communication occuring.");
 #endif
-  }
 
   /// Need to load molar masses here, as FispactMaterial will need molar mass
   /// data in its constructor
@@ -193,8 +179,10 @@ FispactProblem::FispactProblem(const InputParameters &params)
 }
 
 FispactProblem::~FispactProblem() {
-  /// Remove any shared memory region with a similar name just in case
-  // bi::shared_memory_object::remove(_interprocess_segment_name.c_str());
+#ifdef LIBMESH_HAVE_BOOST
+  if (_photon_sharing_instance)
+    bi::shared_memory_object::remove(_interprocess_segment_name.c_str());
+#endif
 }
 
 void FispactProblem::initialSetup() {
@@ -221,12 +209,42 @@ void FispactProblem::initialSetup() {
 
   _n_solution_inventories = &(_fp_schedule_uo->getNumSolutionInventories());
 
-  _photon_energy_spectra = std::make_unique<PhotonSpectra>(
-      *_n_solution_inventories, _mesh.nActiveLocalElem(), _n_photon_bins);
-
-  /// Reserve space for element strengths vector
-  _element_strengths.resize(
-      _mesh.nActiveLocalElem() * (*_n_solution_inventories), 0);
+  if (_comm_photon_flux) {
+#ifdef LIBMESH_HAVE_BOOST
+    // The inventory count is known now. Consumers open lazily at sampling time.
+    const size_t segment_bytes = calculateMemorySize();
+    bi::shared_memory_object::remove(_interprocess_segment_name.c_str());
+    try {
+      _segment = bi::managed_shared_memory(bi::create_only,
+                                          _interprocess_segment_name.c_str(),
+                                          segment_bytes);
+      _photon_sharing_instance = _segment.construct<PhotonSharingData>(
+          PhotonSharingData::objectName())(_segment);
+      _photon_sharing_instance->allocate(*_n_solution_inventories,
+                                         _n_local_elems, _n_photon_bins);
+      _photon_sharing_instance->_photon_bins.assign(_photon_bins.begin(),
+                                                  _photon_bins.end());
+      for (const auto &entry : _local_elem_index)
+        _photon_sharing_instance->_global_element_ids[entry.second] = entry.first;
+      _photon_energy_spectra = std::make_unique<PhotonSpectra>(
+          *_n_solution_inventories, _n_local_elems, _n_photon_bins,
+          _photon_sharing_instance->_photon_fluxes.data());
+      _element_strength_data =
+          _n_local_elems ? _photon_sharing_instance->_elem_strength.data()
+                        : &_empty_strength;
+    } catch (const bi::interprocess_exception &error) {
+      mooseError("Cannot allocate photon shared segment ",
+                 _interprocess_segment_name, " (", segment_bytes,
+                 " bytes, all inventories): ", error.what());
+    }
+#endif
+  } else {
+    _photon_energy_spectra = std::make_unique<PhotonSpectra>(
+        *_n_solution_inventories, _n_local_elems, _n_photon_bins);
+    _element_strengths.resize(_n_local_elems * *_n_solution_inventories, 0);
+    _element_strength_data =
+        _n_local_elems ? _element_strengths.data() : &_empty_strength;
+  }
 
   _local_domain_strength.resize(*_n_solution_inventories, 0);
 
@@ -292,15 +310,7 @@ void FispactProblem::resolveFispactUserObjects() {
 }
 
 void FispactProblem::timestepSetup() {
-
   ExternalProblem::timestepSetup();
-
-  // if (_comm_photon_flux) {
-  //   if (timeStep() > 1) {
-  //
-  //     _segment.destroy<PhotonSharingData>("photon_sharing_instance");
-  //   }
-  // }
 }
 
 void FispactProblem::externalSolve() {
@@ -363,13 +373,16 @@ void FispactProblem::externalSolve() {
             element_photon_energy_spectrum);
         if (element_photon_energy_spectrum.size() != _n_photon_bins)
           mooseError("Photon spectrum size does not match num_photon_bins.");
+        for (double rate : element_photon_energy_spectrum)
+          if (!std::isfinite(rate) || rate < 0)
+            mooseError("Photon emission rates must be finite and nonnegative");
 
         std::copy(element_photon_energy_spectrum.begin(),
                   element_photon_energy_spectrum.end(),
                   _photon_energy_spectra->spectrum_begin(
                       inv_index, local_elem_index));
 
-        _element_strengths[inv_index * n_local_elems + local_elem_index] =
+        _element_strength_data[inv_index * n_local_elems + local_elem_index] =
             calculateElementStrength(element_photon_energy_spectrum);
       }
 
@@ -380,6 +393,11 @@ void FispactProblem::externalSolve() {
     _console << "Photon spectra populated; checked " << n_local_elems
              << " local elements." << std::endl;
     calculateLocalDomainStrength();
+    getTotalDomainStrength();
+#ifdef LIBMESH_HAVE_BOOST
+    if (_comm_photon_flux)
+      _photon_sharing_instance->_populated = true;
+#endif
 
     if (_write_photon_flux) {
 
@@ -426,40 +444,13 @@ void FispactProblem::syncSolutions(ExternalProblem::Direction direction) {
       /// spectra, and FISPACTs own indexing scheme
       size_t photon_spectra_idx = getFispactInventoryIndexFromTime() - 1;
 
-      /// Calculate TotalDomainStrength
-      getTotalDomainStrength();
-
-      /// Create a shared instantiation of the photon sharing class, the init
-      /// data that are common across all timesteps
-      if (timeStep() == 1) {
-        _photon_sharing_instance = _segment.construct<PhotonSharingData>(
-            "photon_sharing_instance")(_segment);
-        _photon_sharing_instance->setPhotonBins(_photon_bins);
-        _photon_sharing_instance->setNumPhotonBins(_n_photon_bins);
-        _photon_sharing_instance->setNumLocalElems(_mesh.nActiveLocalElem());
-        _photon_sharing_instance->setLocalElemIdMap(_local_elem_index);
-      }
-
-      // Setup data that varies per timestep
-      _photon_sharing_instance->_is_setup = false;
-
-      _photon_sharing_instance->setPhotonSpectra(
-          _photon_energy_spectra->time_begin(photon_spectra_idx),
-          _photon_energy_spectra->time_end(photon_spectra_idx));
-
-      _photon_sharing_instance->setElementStrengths(
-          _element_strengths.begin() +
-              (photon_spectra_idx * _mesh.nActiveLocalElem()),
-          _element_strengths.begin() +
-              (photon_spectra_idx * _mesh.nActiveLocalElem()) +
-              _mesh.nActiveLocalElem());
-
-      _photon_sharing_instance->setLocalDomainStrength(
-          _local_domain_strength[photon_spectra_idx]);
-      _photon_sharing_instance->setTotalDomainStrength(
-          _total_domain_strength[photon_spectra_idx]);
-
-      _photon_sharing_instance->setSamplingMethod(_uniform);
+      if (!_solved)
+        mooseError("Photon inventory requested before the activation solve "
+                   "completed");
+      // Metadata only: every inventory already resides in the shared arrays.
+      _photon_sharing_instance->publish(
+          photon_spectra_idx, _local_domain_strength.at(photon_spectra_idx),
+          _total_domain_strength.at(photon_spectra_idx), _uniform);
 
 #else
       mooseError("_comm_photon_flux is set to true but libmesh was not"
@@ -676,17 +667,17 @@ void FispactProblem::insertElementStrength(
     const std::vector<double> &element_flux) {
   double elem_strength = calculateElementStrength(element_flux);
 
-  int idx =
-      (inv_index * _mesh.nActiveLocalElem()) + _local_elem_index[element->id()];
+  const size_t idx =
+      inv_index * _n_local_elems + _local_elem_index.at(element->id());
 
-  _element_strengths[idx] = elem_strength;
+  _element_strength_data[idx] = elem_strength;
 }
 
 void FispactProblem::calculateLocalDomainStrength() {
 
-  const auto n_local_elems = _mesh.nActiveLocalElem();
+  const auto n_local_elems = _n_local_elems;
   for (int inv_index = 0; inv_index < *_n_solution_inventories; inv_index++) {
-    const auto begin = _element_strengths.begin() + inv_index * n_local_elems;
+    const auto begin = _element_strength_data + inv_index * n_local_elems;
     _local_domain_strength[inv_index] =
         std::accumulate(begin, begin + n_local_elems, 0.0);
   }
@@ -698,23 +689,21 @@ void FispactProblem::getTotalDomainStrength() {
   comm().sum(_total_domain_strength);
 }
 
-int FispactProblem::calculateMemorySize() {
-  /// Get number of active local elements
-  dof_id_type n_local_elem = _mesh.getMesh().n_active_local_elem();
-
-  size_t photon_flux_map_size =
-      ((_n_photon_bins * sizeof(double)) + sizeof(int)) * n_local_elem;
-
-  size_t element_strengths_map_size =
-      (sizeof(int) + sizeof(double)) * n_local_elem;
-
-  size_t memory_size = photon_flux_map_size + element_strengths_map_size +
-                       (sizeof(int) * 2) + (sizeof(double) * 2);
-  /**
-   * Really naive way of doing this, but currently giving a 20% buffer to
-   * account for the memory space required by Boost allocators and such
-   */
-  return memory_size * 2;
+size_t FispactProblem::calculateMemorySize() {
+  const auto multiply = PhotonSharingData::checkedProduct;
+  const auto add = [](size_t a, size_t b) {
+    if (a > std::numeric_limits<size_t>::max() - b)
+      throw std::overflow_error("Photon segment size overflow");
+    return a + b;
+  };
+  const size_t rows = multiply(*_n_solution_inventories, _n_local_elems);
+  size_t bytes = multiply(multiply(rows, _n_photon_bins), sizeof(double));
+  bytes = add(bytes, multiply(rows, sizeof(double)));
+  bytes = add(bytes, multiply(_n_local_elems, sizeof(uint64_t)));
+  bytes = add(bytes, multiply(add(_n_photon_bins, 1), sizeof(double)));
+  // Four contiguous vectors, named object, allocator headers, and alignment.
+  // A fixed metadata allowance avoids doubling the domain-sized payload.
+  return add(bytes, 65536);
 }
 
 std::string FispactProblem::fispactLogName() {
@@ -741,6 +730,7 @@ const std::string FispactProblem::generateInterprocessName() {
   MPI_Comm_split_type(comm().get(), MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL,
                       &node_comm);
   MPI_Comm_rank(node_comm, &local_rank);
+  MPI_Comm_free(&node_comm);
 
   std::string ipc_name = std::string(mpi_proc_name);
   ipc_name += "_" + std::to_string(local_rank);

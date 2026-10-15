@@ -241,7 +241,7 @@ public:
   /**
    *
    */
-  int calculateMemorySize();
+  size_t calculateMemorySize();
 
   void convertFluxEnergyGroups(std::vector<double> &flux,
                                const std::vector<double> &input_energy_groups);
@@ -257,7 +257,7 @@ protected:
 #ifdef LIBMESH_HAVE_BOOST
   bi::managed_shared_memory _segment;
 
-  PhotonSharingData *_photon_sharing_instance;
+  PhotonSharingData *_photon_sharing_instance = nullptr;
 #endif
 
   std::unique_ptr<FispactContextBase> _fp_ctxt;
@@ -274,6 +274,10 @@ protected:
   /// Vector to store all local element strengths over all inventory times
   /// Indexed by time major, element id minor
   std::vector<double> _element_strengths;
+  // Points to shared storage in IPC mode, _element_strengths otherwise.
+  double *_element_strength_data = nullptr;
+  double _empty_strength = 0;
+  size_t _n_local_elems = 0;
 
   /// hdf5 filename for photon flux
   std::string _photon_flux_filename;

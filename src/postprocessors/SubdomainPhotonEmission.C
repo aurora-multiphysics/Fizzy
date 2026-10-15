@@ -40,9 +40,9 @@ void SubdomainPhotonEmission::execute() {
              .active_subdomain_elements_ptr_range(block_id)) {
 
       if (elem->processor_id() == processor_id()) {
-        std::vector<double>::iterator begin = spectra->spectrum_begin(
+        auto begin = spectra->spectrum_begin(
             inventory_index, local_element_index[elem->id()]);
-        std::vector<double>::iterator end = spectra->spectrum_end(
+        auto end = spectra->spectrum_end(
             inventory_index, local_element_index[elem->id()]);
 
         _sum += std::accumulate(begin, end, 0.0);

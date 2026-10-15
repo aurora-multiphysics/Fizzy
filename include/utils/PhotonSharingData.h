@@ -1,150 +1,122 @@
-#ifndef PHOTON_SHARING_DATA_H
-#define PHOTON_SHARING_DATA_H
+#pragma once
 
-#include "boost/interprocess/containers/map.hpp"
-#include "boost/interprocess/containers/vector.hpp"
-#include "boost/interprocess/managed_shared_memory.hpp"
-#include "boost/interprocess/shared_memory_object.hpp"
-
-#include <boost/interprocess/interprocess_fwd.hpp>
+#include <boost/interprocess/containers/vector.hpp>
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/shared_memory_object.hpp>
+#include <cmath>
 #include <cstdint>
-#include <map>
-#include <string>
-#include <sys/types.h>
-#include <unordered_map>
-#include <vector>
+#include <limits>
+#include <stdexcept>
 
 namespace bi = boost::interprocess;
+using ShmemVecAllocator =
+    bi::allocator<double, bi::managed_shared_memory::segment_manager>;
+using BoostIpVector = bi::vector<double, ShmemVecAllocator>;
+using ShmemIdAllocator =
+    bi::allocator<uint64_t, bi::managed_shared_memory::segment_manager>;
+using BoostIpIdVector = bi::vector<uint64_t, ShmemIdAllocator>;
 
-/// Allocator for vector of doubles
-typedef boost::interprocess::allocator<
-    double, boost::interprocess::managed_shared_memory::segment_manager>
-    ShmemVecAllocator;
-
-typedef boost::interprocess::vector<double, ShmemVecAllocator> BoostIpVector;
-
-typedef boost::interprocess::allocator<
-    std::pair<const uint64_t, uint64_t>,
-    bi::managed_shared_memory::segment_manager>
-    ShmemIntIntMapAllocator;
-
-typedef bi::map<uint64_t, uint64_t, std::less<uint64_t>,
-                ShmemIntIntMapAllocator>
-    BoostIpIntIntMap;
-
-typedef boost::interprocess::allocator<
-    std::pair<const int, double>, bi::managed_shared_memory::segment_manager>
-    ShmemIntDoubMapAllocator;
-
-typedef bi::map<int, double, std::less<int>, ShmemIntDoubMapAllocator>
-    BoostIpIntDoubMap;
-
+// Version the object name as well as the payload: an old consumer must not
+// interpret this layout as the former single-inventory PhotonSharingData.
 class PhotonSharingData {
 public:
-  // PhotonSharingData(
-  //     bi::managed_shared_memory &segment, std::vector<double> &photon_flux,
-  //     std::vector<double> &elem_strengths, uint64_t num_photon_bins,
-  //     uint64_t num_local_elems, double total_domain_strength,
-  //     double local_domain_strength, std::vector<double> &photon_bins,
-  //     std::unordered_map<uint64_t, uint64_t> &local_element_idx_map)
-  //     : _num_photon_bins(num_photon_bins), _num_local_elems(num_local_elems),
-  //       _local_domain_strength(local_domain_strength),
-  //       _total_domain_strength(total_domain_strength), _is_setup(false),
-  //       _vec_alloc(segment.get_segment_manager()),
-  //       _int_int_map_alloc(segment.get_segment_manager()),
-  //       _int_doub_map_alloc(segment.get_segment_manager()),
-  //       _photon_fluxes(_vec_alloc), _elem_strength(_vec_alloc),
-  //       _photon_bins(_vec_alloc), _local_elem_idx_map(_int_int_map_alloc) {
-  //
-  //   // Initialise shared memory _photon_flux with values from
-  //   // FispactProblem's _photon_fluxes
-  //   _photon_fluxes =
-  //       BoostIpVector(photon_flux.begin(), photon_flux.end(), _vec_alloc);
-  //
-  //   _elem_strength =
-  //       BoostIpVector(elem_strengths.begin(), elem_strengths.end(),
-  //       _vec_alloc);
-  //
-  //   _photon_bins =
-  //       BoostIpVector(photon_bins.begin(), photon_bins.end(), _vec_alloc);
-  //
-  //   for (auto &[global_elem_id, local_elem_id] : local_element_idx_map) {
-  //
-  //     _local_elem_idx_map.insert(
-  //         std::pair<uint64_t, uint64_t>(global_elem_id, local_elem_id));
-  //   }
-  // }
+  static constexpr const char *objectName() { return "photon_inventories_v2"; }
 
-  PhotonSharingData(bi::managed_shared_memory &segment)
-      : _is_setup(false), _vec_alloc(segment.get_segment_manager()),
-        _int_int_map_alloc(segment.get_segment_manager()),
-        _int_doub_map_alloc(segment.get_segment_manager()),
-        _photon_fluxes(_vec_alloc), _elem_strength(_vec_alloc),
-        _photon_bins(_vec_alloc), _local_elem_idx_map(_int_int_map_alloc) {}
+  explicit PhotonSharingData(bi::managed_shared_memory &segment)
+      : _photon_fluxes(segment.get_segment_manager()),
+        _elem_strength(segment.get_segment_manager()),
+        _photon_bins(segment.get_segment_manager()),
+        _global_element_ids(segment.get_segment_manager()) {}
 
-  void setPhotonSpectra(const std::vector<double>::iterator spectra_begin,
-                        const std::vector<double>::iterator spectra_end) {
-
-    _photon_fluxes.assign(spectra_begin, spectra_end);
+  static size_t checkedProduct(size_t a, size_t b) {
+    if (b && a > std::numeric_limits<size_t>::max() / b)
+      throw std::overflow_error("Photon inventory storage size overflow");
+    return a * b;
   }
 
-  void
-  setElementStrengths(const std::vector<double>::iterator elem_strength_begin,
-                      const std::vector<double>::iterator elem_strength_end) {
-    _elem_strength.assign(elem_strength_begin, elem_strength_end);
+  // Fixed arrays: never resize after views have been handed to the producer.
+  void allocate(size_t inventories, size_t elements, size_t bins) {
+    if (_num_inventories)
+      throw std::logic_error("Photon inventory arrays are already allocated");
+    if (!inventories || !bins)
+      throw std::invalid_argument("Photon inventories and bins must be nonzero");
+    _num_inventories = inventories;
+    _num_local_elems = elements;
+    _num_photon_bins = bins;
+    const size_t rows = checkedProduct(inventories, elements);
+    _photon_fluxes.resize(checkedProduct(rows, bins), 0.0);
+    _elem_strength.resize(rows, 0.0);
+    _global_element_ids.resize(elements);
   }
 
-  void setPhotonBins(const std::vector<double> &photon_bins) {
-    _photon_bins.assign(photon_bins.begin(), photon_bins.end());
+  size_t strengthIndex(size_t inventory, size_t element) const {
+    if (inventory >= _num_inventories || element >= _num_local_elems)
+      throw std::out_of_range("Photon inventory/element index out of range");
+    return inventory * _num_local_elems + element;
   }
 
-  void setNumPhotonBins(const size_t &n_photon_bins) {
-    _num_photon_bins = n_photon_bins;
+  const double *spectrum(size_t inventory, size_t element) const {
+    return _photon_fluxes.data() +
+           strengthIndex(inventory, element) * _num_photon_bins;
   }
 
-  void setNumLocalElems(const size_t &n_local_elems) {
-    _num_local_elems = n_local_elems;
+  double elementStrength(size_t inventory, size_t element) const {
+    return _elem_strength[strengthIndex(inventory, element)];
   }
 
-  void setLocalDomainStrength(const double &local_domain_strength) {
-    _local_domain_strength = local_domain_strength;
+  // Called only between transport solves. Arrays are immutable while consumers
+  // sample. The generation is publication metadata, NOT an IPC synchronization
+  // primitive for independently executing producer/consumer jobs.
+  void publish(size_t inventory, double local_strength, double total_strength,
+               bool uniform) {
+    if (!_populated || inventory >= _num_inventories)
+      throw std::logic_error("Cannot publish unavailable photon inventory");
+    _selected_inventory = inventory;
+    _local_domain_strength = local_strength;
+    _total_domain_strength = total_strength;
+    _uniform = uniform;
+    ++_generation;
   }
 
-  void setTotalDomainStrength(const double &total_domain_strength) {
-    _total_domain_strength = total_domain_strength;
-  }
+  size_t _num_inventories = 0;
+  size_t _num_photon_bins = 0;
+  size_t _num_local_elems = 0;
+  size_t _selected_inventory = 0;
+  uint64_t _generation = 0;
+  double _local_domain_strength = 0;
+  double _total_domain_strength = 0;
+  bool _populated = false;
+  bool _uniform = false;
 
-  void setLocalElemIdMap(
-      std::unordered_map<uint64_t, uint64_t> &local_element_idx_map) {
-
-    for (auto &[global_elem_id, local_elem_id] : local_element_idx_map) {
-
-      _local_elem_idx_map.insert(
-          std::pair<uint64_t, uint64_t>(global_elem_id, local_elem_id));
-    }
-  }
-
-  void setSamplingMethod(bool uniform = false) { _uniform = uniform; }
-
-  size_t _num_photon_bins;
-  size_t _num_local_elems;
-  double _local_domain_strength;
-  double _total_domain_strength;
-
-  bool _is_setup;
-  bool _uniform;
-
-  /// Allocators
-  ShmemVecAllocator _vec_alloc;
-  ShmemIntIntMapAllocator _int_int_map_alloc;
-  ShmemIntDoubMapAllocator _int_doub_map_alloc;
-
-  /// Data structures
+  // [inventory][local element][group], with group-integrated emission rates.
   BoostIpVector _photon_fluxes;
   BoostIpVector _elem_strength;
   BoostIpVector _photon_bins;
-
-  BoostIpIntIntMap _local_elem_idx_map;
+  // Explicitly in spectrum-row order, independent of global ID ordering.
+  BoostIpIdVector _global_element_ids;
 };
 
-#endif
+// Sample histogram data without allocating PDF/CDF arrays. Both random inputs
+// must be in [0,1). total must be the sum of the nonnegative group rates.
+inline double samplePhotonHistogram(const double *rates, const double *bounds,
+                                    size_t bins, double total, double group_u,
+                                    double energy_u) {
+  if (!bins || !(total > 0) || !std::isfinite(total))
+    throw std::invalid_argument("Cannot sample an empty/zero photon spectrum");
+  const double target = group_u * total;
+  double cumulative = 0;
+  size_t last_positive = bins;
+  for (size_t group = 0; group < bins; ++group) {
+    if (rates[group] > 0) {
+      last_positive = group;
+      cumulative += rates[group];
+      if (target < cumulative)
+        return bounds[group] + energy_u * (bounds[group + 1] - bounds[group]);
+    }
+  }
+  // Accumulation/product rounding can put the target at the upper endpoint.
+  if (last_positive == bins)
+    throw std::invalid_argument("Photon spectrum has no positive groups");
+  return bounds[last_positive] +
+         energy_u * (bounds[last_positive + 1] - bounds[last_positive]);
+}
