@@ -2,6 +2,7 @@
 #include "AuxKernel.h"
 #include "FispactInventoryManager.h"
 #include "FizzyEnums.h"
+#include "libmesh/string_to_enum.h"
 
 class FispactAuxKernel : public AuxKernel {
 
@@ -12,8 +13,15 @@ public:
   }
 
   FispactAuxKernel(const InputParameters &params) : AuxKernel(params) {
-    if (mooseVariableBase()->feType() != libMesh::FEType(CONSTANT, MONOMIAL))
-      paramError("variable", "Must be of type CONSTANT MONOMIAL");
+    const auto &fe_type = mooseVariableBase()->feType();
+    if (fe_type.order != libMesh::CONSTANT ||
+        fe_type.family != libMesh::MONOMIAL)
+      paramError(
+          "variable", "Must be of type CONSTANT MONOMIAL; variable '",
+          mooseVariableBase()->name(), "' has order ",
+          libMesh::Utility::enum_to_string<libMesh::Order>(fe_type.order),
+          " and family ",
+          libMesh::Utility::enum_to_string<libMesh::FEFamily>(fe_type.family));
   }
 
 protected:
