@@ -158,6 +158,8 @@ public:
     _input.setSolverTolerance(rtol, atol);
   }
 
+  virtual void setGammaEnergyBounds(const std::vector<double> &bounds) {};
+
   fispact::InputData &getInput() { return _input; };
 
 private:
