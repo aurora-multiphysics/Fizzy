@@ -41,7 +41,7 @@ FispactSchedule::FispactSchedule(const InputParameters &parameters)
                  " must be finite and strictly positive.");
     }
 
-    if (!std::isfinite(_flux_amplitude[i]) || _flux_amplitude[i] <= 0.0) {
+    if (!std::isfinite(_flux_amplitude[i]) || _flux_amplitude[i] < 0.0) {
       paramError("flux_amplitude", "flux_amplitude value at index ", i,
                  " must be finite and strictly positive.");
     }
